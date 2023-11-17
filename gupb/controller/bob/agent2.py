@@ -381,7 +381,7 @@ class QBot(Controller):
 
     @property
     def name(self) -> str:
-        return 'Bob2'
+        return 'Bob'
 
     @property
     def preferred_tabard(self) -> Tabard:
