@@ -1,16 +1,17 @@
 from .. import Controller
+from .replay_buffer import ReplayBuffer
+from .model import Model
 from typing import Any
 from gupb.model.characters import ChampionKnowledge, Tabard, ChampionDescription, Facing, Action
 from gupb.model.arenas import ArenaDescription
 from gupb.model.tiles import TileDescription
 import numpy as np
 from datetime import datetime
-from numpy import ndarray
 import torch as T
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-import os
+import wandb
+from collections import defaultdict
+from datetime import datetime
+
 
 POSSIBLE_RANDOM_ACTIONS = [
     Action.TURN_LEFT,
@@ -18,131 +19,6 @@ POSSIBLE_RANDOM_ACTIONS = [
     Action.STEP_FORWARD,
     Action.ATTACK,
 ]
-
-
-class ReplayBuffer(object):
-    def __init__(self, mem_size, state_shape, champ_size, n_actions):
-        self.mem_size = mem_size
-        self.mem_cntr = 0
-        self.state_memory = np.zeros((self.mem_size, *state_shape), dtype=float)
-        self.self_state_memory = np.zeros((self.mem_size, champ_size), dtype=float)
-        self._state_memory = np.zeros((self.mem_size, *state_shape), dtype=float)
-        self._self_state_memory = np.zeros((self.mem_size, champ_size), dtype=float)
-        self.action_memory = np.zeros(self.mem_size, dtype=int)
-        self.reward_memory = np.zeros(self.mem_size, dtype=np.float32)
-        self.terminal_memory = np.zeros(self.mem_size, dtype=bool)
-
-    def store_transition(self, state, self_state, action, reward, _state, _self_state, done):
-        index = self.mem_cntr % self.mem_size
-        self.state_memory[index] = state
-        self.self_state_memory[index] = self_state
-        self._state_memory[index] = _state
-        self._self_state_memory[index] = _self_state
-        self.action_memory[index] = action
-        self.reward_memory[index] = reward
-        self.terminal_memory[index] = 1 - done
-        self.mem_cntr += 1
-
-    @staticmethod
-    def _softmax(x: ndarray) -> ndarray:
-        z = x - max(x)
-        numerator = np.exp(z)
-        denominator = np.sum(numerator)
-        softmax = numerator / denominator
-
-        return softmax
-
-    def sample_buffer(self, batch_size):
-        max_mem = min(self.mem_cntr, self.mem_size)
-        #sotmax na nagrody
-        probs = self._softmax(np.abs(self.reward_memory[:max_mem]))
-
-        batch = np.random.choice(max_mem, batch_size, p=probs)
-
-        states = self.state_memory[batch]
-        self_states = self.self_state_memory[batch]
-        actions = self.action_memory[batch]
-        rewards = self.reward_memory[batch]
-        _states = self._state_memory[batch]
-        _self_states = self._self_state_memory[batch]
-        done = self.terminal_memory[batch]
-
-        return states, self_states, actions, rewards, _states, _self_states, done
-
-
-def conv_block(in_channels, out_channels, kernel):
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel, padding='same'),
-        nn.ReLU(inplace=True),
-    )
-
-
-class Model(nn.Module):
-    def __init__(self, alpha, state_shape, self_state_shape, n_actions, name, fname='tmp/model'):
-        super(Model, self).__init__()
-
-        self.name = name
-        self.save_dir = os.path.join(fname, name)
-
-        ##dane mapy
-        self.conv1 = conv_block(state_shape[0], 16, 3)
-        self.conv2 = conv_block(16, 32, 3)
-        self.conv3 = conv_block(32, 64, 3)
-        self.conv4 = conv_block(64, 32, 1)
-        ##dane championa
-        self.champ_fc1 = nn.Linear(self_state_shape, 128)
-        self.champ_fc2 = nn.Linear(128, 256)
-        self.champ_fc3 = nn.Linear(256, 256)
-        self.champ_fc4 = nn.Linear(256, 256)
-        self.champ_fc5 = nn.Linear(256, 256)
-        self.champ_fc6 = nn.Linear(256, 256)
-
-        self.fc1 = nn.Linear(3456, 128)
-        self.fc2 = nn.Linear(128, 256)
-        self.q = nn.Linear(256, n_actions)
-
-        self.optimizer = optim.Adam(self.parameters(), lr=alpha)
-        self.device = T.device('cuda:0') if T.cuda.is_available() else T.device('cpu')
-
-        self.loss = nn.MSELoss()
-
-        self.to(self.device)
-
-    def forward(self, state, champ_state):
-        state = self.conv1(state)
-        state = self.conv2(state)
-        state = self.conv3(state)
-        state = self.conv4(state)
-        state = T.flatten(state, 1)
-
-        champ_state = F.relu(self.champ_fc1(champ_state))
-        champ_state = F.relu(self.champ_fc2(champ_state))
-        champ_state = F.relu(self.champ_fc3(champ_state))
-        champ_state = F.relu(self.champ_fc4(champ_state))
-        champ_state = F.relu(self.champ_fc5(champ_state))
-        champ_state = F.relu(self.champ_fc6(champ_state))
-
-        state = T.cat([state, champ_state], dim=1)
-
-        state = F.relu(self.fc1(state))
-        state = F.relu(self.fc2(state))
-        state = self.q(state)
-
-        return state
-
-    def save_model(self, save_dir=None, filename=None):
-        if save_dir is None:
-            save_dir = self.save_dir
-
-        if filename is None:
-            filename = self.save_file_name
-        T.save(self.state_dict(), os.path.join(save_dir, filename))
-
-    def load_model(self, load_dir=None):
-        if load_dir is None:
-            load_dir = self.save_dir
-        self.load_state_dict(T.load(load_dir))
-
 
 class QBot(Controller):
     _HEALTH_MULTI = 2
@@ -152,6 +28,9 @@ class QBot(Controller):
         'wall': 3,
         'menhir': 4,
     }
+
+    _PLAYER_X = 0
+    _PLAYER_Y = 1
 
     _WEAPONS = {
         'knife': 5,
@@ -191,6 +70,7 @@ class QBot(Controller):
         'lone_sanctum': (_N_CHANNELS, 19, 19),
         'mini': (_N_CHANNELS, 10, 10),
         'wasteland': (_N_CHANNELS, 50, 50),
+        'ordinary_chaos': (_N_CHANNELS, 24, 24)
     }
 
     POSSIBLE_ACTIONS = [
@@ -219,6 +99,9 @@ class QBot(Controller):
             'done': False
         }
 
+        self.run = self.__init__wandb()
+        self._log_scores = defaultdict(lambda: [])
+
         self.action_size = 4
 
         self.memory = None
@@ -234,16 +117,39 @@ class QBot(Controller):
     def __hash__(self) -> int:
         return -1
 
-    def reset(self, arena_description: ArenaDescription) -> None:
+    def __init__wandb(self):
+        return wandb.init(
+            project="gupb-model",
+            name=f"training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+
+    def __log_to_wandb(self):
+        log_data = {}
+        scores = [sum(x) for x in zip(*self._log_scores.values())]
+        log_data['avg_reward'] = np.mean(scores)
+        log_data['std_reward'] = np.std(scores)
+        log_data |= {
+            k: wandb.Histogram(v)
+            for k, v in self._log_scores.items()
+        }
+        self.run.log(log_data)
+
+
+    def reset(self, game_no, arena_description: ArenaDescription) -> None:
         self.map_size = self.MAPS[arena_description.name]
         if not self.memory:
             self.memory = ReplayBuffer(10_000, self.map_size, self.my_data_size, self.action_size)
         if not self.q:
-            self.q = Model(0.001, self.map_size, self.my_data_size, self.action_size, 'q_learning')
+            self.q = Model(0.001, self.map_size, self.my_data_size, self.action_size, 'q_learning').to('cuda:0')
             #tu można na double
             self.q.float()
             #todo: to do inita przenieść
             #self.q.load_model('M:\\Studia\\UCZENIE\\BOB\\15-01')
+
+        if len(self._log_scores) > 0:
+            self.__log_to_wandb()
+
+        self._log_scores = defaultdict(lambda: [])
 
         self.transition_cache: dict[str, Any] = {
             'state': np.zeros(self.map_size),
@@ -303,8 +209,31 @@ class QBot(Controller):
 
         return action
 
-    def do_reward(self) -> float:
+    def __calculate_mist_reward(self):
+        _STAYED_MIST_PENALTY = -5
+        _ENTERED_MIST_PENALTY = -20
+        _EXITED_MIST_REWARD = 10
 
+        current_state = self.transition_cache['_state']
+        current_champ = self.transition_cache['_self_state']
+        current_mist_info = current_state[self._EFFECTS['mist'], int(current_champ[self._PLAYER_X]), int(current_champ[self._PLAYER_Y])]
+
+        prev_state = self.transition_cache['state']
+        prev_champ = self.transition_cache['self_state']
+        prev_mist_info = prev_state[self._EFFECTS['mist'], int(prev_champ[self._PLAYER_X]), int(prev_champ[self._PLAYER_Y])]
+
+        reward = 0
+
+        if current_mist_info == 1:
+            reward += _STAYED_MIST_PENALTY
+        if current_mist_info == 0 and prev_mist_info == 1:
+            reward += _EXITED_MIST_REWARD
+        elif current_mist_info == 1 and prev_mist_info == 0:
+            reward += _ENTERED_MIST_PENALTY
+
+        return reward
+
+    def do_reward(self) -> float:
         weapon_change_idx = self.transition_cache['_self_state'][self._WEAPONS['knife']: self._WEAPONS['amulet']+1].dot(self.BIN2DEC) - self.transition_cache['self_state'][self._WEAPONS['knife']: self._WEAPONS['amulet']+1].dot(self.BIN2DEC)
         #todo: reward za hita, negatywna nagroda za mgłę
         #
@@ -315,8 +244,18 @@ class QBot(Controller):
         vis_ties = np.sum(self.transition_cache['_self_state'][1:5]) - np.sum(self.transition_cache['self_state'][1:5])
         health_diff = self.transition_cache['_self_state'][self._HEALTH] - self.transition_cache['self_state'][self._HEALTH]
         potion = self.transition_cache['_self_state'][self._CONSUMABLE]
+        mist = self.__calculate_mist_reward()
+
+        for k, v in zip(['visible_tiles', 'hp_diff', 'potions', 'mist'],
+                        [vis_ties, health_diff, potion, mist]):
+            self._log_scores[k].append(v)
+
         DDD = 0
-        return weapon_change_idx + vis_ties + health_diff + potion * self._HEALTH_MULTI
+        return weapon_change_idx +\
+            vis_ties +\
+            health_diff +\
+            potion * self._HEALTH_MULTI +\
+            mist
 
     def serialize_knowledge(self, knowledge: ChampionKnowledge):
         map = np.zeros(self.map_size)
@@ -324,8 +263,8 @@ class QBot(Controller):
         my_data: TileDescription = knowledge.visible_tiles.pop(knowledge.position)
 
         temp = np.zeros(self.my_data_size)
-        temp[0] = knowledge.position.x
-        temp[1] = knowledge.position.y
+        temp[self._PLAYER_X] = knowledge.position.x
+        temp[self._PLAYER_Y] = knowledge.position.y
         temp[self._WEAPONS[my_data.character.weapon.name]] = 1
         temp[self._FACING[my_data.character.facing]] = 1
         temp[self._HEALTH] = my_data.character.health

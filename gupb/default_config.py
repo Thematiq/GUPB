@@ -1,15 +1,18 @@
 from gupb.controller import keyboard
 from gupb.controller import random
 from gupb.controller.cynamonka.cynamonka import CynamonkaController
+from gupb.controller.bob.agent2 import QBot
 from gupb.model.arenas import ArenaDescription
 from gupb.scripts import arena_generator
 
-cynamonka_controller = CynamonkaController("CynamonkaController")
+# cynamonka_controller = CynamonkaController("CynamonkaController")
+bob = QBot()
 
 CONFIGURATION = {
-    'arenas': arena_generator.generate_arenas(3),
+    'arenas': ['ordinary_chaos'],
     'controllers': [
-        cynamonka_controller,
+        # cynamonka_controller,
+        bob,
         random.RandomController("Alice"),
         random.RandomController("Bob"),
         random.RandomController("Cecilia"),
@@ -19,8 +22,8 @@ CONFIGURATION = {
         random.RandomController("Ce"),
     ],
     'start_balancing': False,
-    'visualise': True,
-    'show_sight': cynamonka_controller,
-    'runs_no': 1,
+    'visualise': False,
+    'show_sight': bob,
+    'runs_no': 100,
     'profiling_metrics': [],
 }
