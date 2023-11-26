@@ -10,20 +10,22 @@ from math import floor
 
 def conv_block(in_channels, out_channels, kernel):
     return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel, padding='same'),
+        nn.Conv2d(in_channels, out_channels, kernel, padding="same"),
         nn.ReLU(inplace=True),
     )
 
 
 class AbstractModel(nn.Module):
-    def __init__(self, name, fname='tmp/model', device=None):
+    def __init__(self, name, fname="tmp/model", device=None):
         super().__init__()
         self.name = name
         self.save_dir = os.path.join(fname)
         os.makedirs(self.save_dir, exist_ok=True)
 
         if device is None:
-            self.device = T.device('cuda:0') if T.cuda.is_available() else T.device('cpu')
+            self.device = (
+                T.device("cuda:0") if T.cuda.is_available() else T.device("cpu")
+            )
         else:
             self.device = device
 
@@ -41,10 +43,10 @@ class AbstractModel(nn.Module):
         self.load_state_dict(T.load(load_dir))
 
 
-
-
 class Model(AbstractModel):
-    def __init__(self, alpha, state_shape, self_state_shape, n_actions, name, fname='tmp/model'):
+    def __init__(
+        self, alpha, state_shape, self_state_shape, n_actions, name, fname="tmp/model"
+    ):
         super(Model, self).__init__(name, fname, None)
 
         ##dane mapy
@@ -65,7 +67,7 @@ class Model(AbstractModel):
         self.q = nn.Linear(256, n_actions)
 
         self.optimizer = optim.Adam(self.parameters(), lr=alpha)
-        self.device = T.device('cuda:0') if T.cuda.is_available() else T.device('cpu')
+        self.device = T.device("cuda:0") if T.cuda.is_available() else T.device("cpu")
 
         self.loss = nn.MSELoss()
 
@@ -102,10 +104,12 @@ class CNNPooler(AbstractModel):
             nn.ReLU(),
             nn.Conv2d(mid_channels, out_channels, kernel_size=kernel).to(self.device),
             nn.ReLU(),
-            nn.MaxPool2d(pool).to(self.device)
+            nn.MaxPool2d(pool).to(self.device),
         )
 
-    def __init__(self, alpha, state_shape, self_state_shape, n_actions, name, fname='tmp/model2'):
+    def __init__(
+        self, alpha, state_shape, self_state_shape, n_actions, name, fname="tmp/model2"
+    ):
         super().__init__(name, fname, None)
 
         self._block_1 = self.build_conv_block(state_shape[0], 32)
@@ -116,14 +120,14 @@ class CNNPooler(AbstractModel):
             nn.Linear(in_features=256, out_features=128),
             nn.ReLU(),
             nn.Linear(in_features=128, out_features=64),
-            nn.ReLU()
+            nn.ReLU(),
         )
 
         self._self_state_mlp = nn.Sequential(
             nn.Linear(self_state_shape, out_features=64),
             nn.ReLU(),
             nn.Linear(64, out_features=32),
-            nn.ReLU()
+            nn.ReLU(),
         )
 
         self._final_proc = nn.Sequential(
@@ -132,7 +136,7 @@ class CNNPooler(AbstractModel):
             nn.Linear(in_features=64, out_features=32),
             nn.ReLU(),
             nn.Linear(in_features=32, out_features=n_actions),
-            nn.Softmax()
+            nn.Softmax(),
         )
 
         self.optimizer = optim.AdamW(self.parameters(), lr=alpha)
@@ -151,5 +155,3 @@ class CNNPooler(AbstractModel):
 
         feat = torch.cat([state_res, self_state_res], dim=1)
         return self._final_proc(feat)
-
-

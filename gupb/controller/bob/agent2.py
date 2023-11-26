@@ -2,7 +2,13 @@ from .. import Controller
 from .replay_buffer import ReplayBuffer
 from .model import Model, CNNPooler
 from typing import Any
-from gupb.model.characters import ChampionKnowledge, Tabard, ChampionDescription, Facing, Action
+from gupb.model.characters import (
+    ChampionKnowledge,
+    Tabard,
+    ChampionDescription,
+    Facing,
+    Action,
+)
 from gupb.model.arenas import ArenaDescription
 from gupb.model.tiles import TileDescription
 import numpy as np
@@ -19,38 +25,34 @@ POSSIBLE_RANDOM_ACTIONS = [
     Action.ATTACK,
 ]
 
+
 class QBot(Controller):
     _HEALTH_MULTI = 2
     _TILES = {
-        'land': 1,
-        'sea': 2,
-        'wall': 3,
-        'menhir': 4,
+        "land": 1,
+        "sea": 2,
+        "wall": 3,
+        "menhir": 4,
     }
 
     _PLAYER_X = 0
     _PLAYER_Y = 1
 
     _WEAPONS = {
-        'knife': 5,
-        'bow_loaded': 6,
-        'bow_unloaded': 7,
-        'sword': 8,
-        'axe': 9,
-        'amulet': 10
+        "knife": 5,
+        "bow_loaded": 6,
+        "bow_unloaded": 7,
+        "sword": 8,
+        "axe": 9,
+        "amulet": 10,
     }
 
     _EFFECTS = {
-        'mist': 11,
-        'weaponCut': 12,
+        "mist": 11,
+        "weaponCut": 12,
     }
 
-    _FACING = {
-        Facing.UP: 13,
-        Facing.DOWN: 14,
-        Facing.LEFT: 15,
-        Facing.RIGHT: 16
-    }
+    _FACING = {Facing.UP: 13, Facing.DOWN: 14, Facing.LEFT: 15, Facing.RIGHT: 16}
 
     _CONSUMABLE = 17
 
@@ -61,15 +63,15 @@ class QBot(Controller):
     _N_CHANNELS = 19
 
     MAPS = {
-        'archipelago': (_N_CHANNELS, 50, 50),
-        'dungeon': (_N_CHANNELS, 50, 50),
-        'fisher_island': (_N_CHANNELS, 50, 50),
-        'island': (_N_CHANNELS, 100, 100),
-        'isolated_shrine': (_N_CHANNELS, 19, 19),
-        'lone_sanctum': (_N_CHANNELS, 19, 19),
-        'mini': (_N_CHANNELS, 10, 10),
-        'wasteland': (_N_CHANNELS, 50, 50),
-        'ordinary_chaos': (_N_CHANNELS, 24, 24)
+        "archipelago": (_N_CHANNELS, 50, 50),
+        "dungeon": (_N_CHANNELS, 50, 50),
+        "fisher_island": (_N_CHANNELS, 50, 50),
+        "island": (_N_CHANNELS, 100, 100),
+        "isolated_shrine": (_N_CHANNELS, 19, 19),
+        "lone_sanctum": (_N_CHANNELS, 19, 19),
+        "mini": (_N_CHANNELS, 10, 10),
+        "wasteland": (_N_CHANNELS, 50, 50),
+        "ordinary_chaos": (_N_CHANNELS, 24, 24),
     }
 
     POSSIBLE_ACTIONS = [
@@ -79,7 +81,7 @@ class QBot(Controller):
         Action.ATTACK,
     ]
 
-    BIN2DEC = 2**np.arange(_WEAPONS.__len__())
+    BIN2DEC = 2 ** np.arange(_WEAPONS.__len__())
 
     SAVE_EVERY_N = 5_000
 
@@ -90,13 +92,13 @@ class QBot(Controller):
         self.map_size = (0, 0)
         self.my_data_size = self._N_CHANNELS
         self.transition_cache: dict[str, Any] = {
-            'state': None,
-            'self_state': None,
-            'action': None,
-            'reward': 0,
-            '_state': None,
-            '_self_state': None,
-            'done': False
+            "state": None,
+            "self_state": None,
+            "action": None,
+            "reward": 0,
+            "_state": None,
+            "_self_state": None,
+            "done": False,
         }
 
         self.run = self.__init__wandb()
@@ -120,33 +122,33 @@ class QBot(Controller):
     def __init__wandb(self):
         return wandb.init(
             project="gupb-model",
-            name=f"training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            name=f"training_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         )
 
     def __log_to_wandb(self):
         log_data = {}
         scores = [sum(x) for x in zip(*self._log_scores.values())]
-        log_data['avg_reward'] = np.mean(scores)
-        log_data['std_reward'] = np.std(scores)
-        log_data['steps_survived'] = self._steps_survived
-        log_data |= {
-            k: wandb.Histogram(v)
-            for k, v in self._log_scores.items()
-        }
+        log_data["avg_reward"] = np.mean(scores)
+        log_data["std_reward"] = np.std(scores)
+        log_data["steps_survived"] = self._steps_survived
+        log_data |= {k: wandb.Histogram(v) for k, v in self._log_scores.items()}
         self.run.log(log_data)
-
 
     def reset(self, game_no, arena_description: ArenaDescription) -> None:
         self.map_size = self.MAPS[arena_description.name]
         if not self.memory:
-            self.memory = ReplayBuffer(10_000, self.map_size, self.my_data_size, self.action_size)
+            self.memory = ReplayBuffer(
+                10_000, self.map_size, self.my_data_size, self.action_size
+            )
         if not self.q:
             print("Loading model")
-            self.q = self._model_cls(0.001, self.map_size, self.my_data_size, self.action_size, 'q_learning').to('cuda:0')
-            #tu można na double
+            self.q = self._model_cls(
+                0.001, self.map_size, self.my_data_size, self.action_size, "q_learning"
+            ).to("cuda:0")
+            # tu można na double
             self.q.float()
-            #todo: to do inita przenieść
-            #self.q.load_model('M:\\Studia\\UCZENIE\\BOB\\15-01')
+            # todo: to do inita przenieść
+            # self.q.load_model('M:\\Studia\\UCZENIE\\BOB\\15-01')
 
         if len(self._log_scores) > 0:
             self.__log_to_wandb()
@@ -155,20 +157,28 @@ class QBot(Controller):
         self._log_scores = defaultdict(lambda: [])
 
         self.transition_cache: dict[str, Any] = {
-            'state': np.zeros(self.map_size),
-            'self_state': np.zeros(self._N_CHANNELS),
-            'action': 0,
-            'reward': 0,
-            '_state': np.zeros(self.map_size),
-            '_self_state': np.zeros(self._N_CHANNELS),
-            'done': False
+            "state": np.zeros(self.map_size),
+            "self_state": np.zeros(self._N_CHANNELS),
+            "action": 0,
+            "reward": 0,
+            "_state": np.zeros(self.map_size),
+            "_self_state": np.zeros(self._N_CHANNELS),
+            "done": False,
         }
 
     def learn(self, batch_size=16):
         if self.memory.mem_cntr < batch_size:
             return
 
-        states, my_states, actions, rewards, _states, _my_states, done = self.memory.sample_buffer(batch_size)
+        (
+            states,
+            my_states,
+            actions,
+            rewards,
+            _states,
+            _my_states,
+            done,
+        ) = self.memory.sample_buffer(batch_size)
 
         states = T.tensor(states, dtype=T.float32).to(self.q.device)
         _states = T.tensor(_states, dtype=T.float32).to(self.q.device)
@@ -184,7 +194,9 @@ class QBot(Controller):
 
             batch_index = np.arange(batch_size, dtype=np.int32)
 
-            q_target[batch_index, actions] = rewards + self.gamma * q_next[batch_index, max_actions] * done
+            q_target[batch_index, actions] = (
+                rewards + self.gamma * q_next[batch_index, max_actions] * done
+            )
             q_target = T.tensor(q_target).to(self.q.device)
 
         self.q.optimizer.zero_grad()
@@ -197,7 +209,9 @@ class QBot(Controller):
             self.q.save_model(filename=filename)
 
     def update_epsilon_value(self):
-        self.epsilon = self.epsilon - self.eps_dec if self.epsilon > self.min_eps else self.min_eps
+        self.epsilon = (
+            self.epsilon - self.eps_dec if self.epsilon > self.min_eps else self.min_eps
+        )
 
     def choose_action(self, state, my_data):
         if np.random.random() <= self.epsilon:
@@ -217,13 +231,21 @@ class QBot(Controller):
         _ENTERED_MIST_PENALTY = -20
         _EXITED_MIST_REWARD = 10
 
-        current_state = self.transition_cache['_state']
-        current_champ = self.transition_cache['_self_state']
-        current_mist_info = current_state[self._EFFECTS['mist'], int(current_champ[self._PLAYER_X]), int(current_champ[self._PLAYER_Y])]
+        current_state = self.transition_cache["_state"]
+        current_champ = self.transition_cache["_self_state"]
+        current_mist_info = current_state[
+            self._EFFECTS["mist"],
+            int(current_champ[self._PLAYER_X]),
+            int(current_champ[self._PLAYER_Y]),
+        ]
 
-        prev_state = self.transition_cache['state']
-        prev_champ = self.transition_cache['self_state']
-        prev_mist_info = prev_state[self._EFFECTS['mist'], int(prev_champ[self._PLAYER_X]), int(prev_champ[self._PLAYER_Y])]
+        prev_state = self.transition_cache["state"]
+        prev_champ = self.transition_cache["self_state"]
+        prev_mist_info = prev_state[
+            self._EFFECTS["mist"],
+            int(prev_champ[self._PLAYER_X]),
+            int(prev_champ[self._PLAYER_Y]),
+        ]
 
         reward = 0
 
@@ -237,28 +259,43 @@ class QBot(Controller):
         return reward
 
     def do_reward(self) -> float:
-        weapon_change_idx = self.transition_cache['_self_state'][self._WEAPONS['knife']: self._WEAPONS['amulet']+1].dot(self.BIN2DEC) - self.transition_cache['self_state'][self._WEAPONS['knife']: self._WEAPONS['amulet']+1].dot(self.BIN2DEC)
-        #todo: reward za hita, negatywna nagroda za mgłę
+        weapon_change_idx = self.transition_cache["_self_state"][
+            self._WEAPONS["knife"] : self._WEAPONS["amulet"] + 1
+        ].dot(self.BIN2DEC) - self.transition_cache["self_state"][
+            self._WEAPONS["knife"] : self._WEAPONS["amulet"] + 1
+        ].dot(
+            self.BIN2DEC
+        )
+        # todo: reward za hita, negatywna nagroda za mgłę
         #
-        #zabicie, miejsce- softmax na zbiernie itemów
-        #zapuisywać akcję i wartośćjaką sieć wypluła dla akcji -> sftmax stanów nie po nagrodzie
+        # zabicie, miejsce- softmax na zbiernie itemów
+        # zapuisywać akcję i wartośćjaką sieć wypluła dla akcji -> sftmax stanów nie po nagrodzie
         # Go! - D/D/D Divine Zero King Rage
-        #exploracja?
-        vis_ties = np.sum(self.transition_cache['_self_state'][1:5]) - np.sum(self.transition_cache['self_state'][1:5])
-        health_diff = self.transition_cache['_self_state'][self._HEALTH] - self.transition_cache['self_state'][self._HEALTH]
-        potion = self.transition_cache['_self_state'][self._CONSUMABLE]
+        # exploracja?
+        vis_ties = np.sum(self.transition_cache["_self_state"][1:5]) - np.sum(
+            self.transition_cache["self_state"][1:5]
+        )
+        health_diff = (
+            self.transition_cache["_self_state"][self._HEALTH]
+            - self.transition_cache["self_state"][self._HEALTH]
+        )
+        potion = self.transition_cache["_self_state"][self._CONSUMABLE]
         mist = self.__calculate_mist_reward()
 
-        for k, v in zip(['visible_tiles', 'hp_diff', 'potions', 'mist'],
-                        [vis_ties, health_diff, potion, mist]):
+        for k, v in zip(
+            ["visible_tiles", "hp_diff", "potions", "mist"],
+            [vis_ties, health_diff, potion, mist],
+        ):
             self._log_scores[k].append(v)
 
         DDD = 0
-        return weapon_change_idx +\
-            vis_ties +\
-            health_diff +\
-            potion * self._HEALTH_MULTI +\
-            mist
+        return (
+            weapon_change_idx
+            + vis_ties
+            + health_diff
+            + potion * self._HEALTH_MULTI
+            + mist
+        )
 
     def serialize_knowledge(self, knowledge: ChampionKnowledge):
         map = np.zeros(self.map_size)
@@ -277,7 +314,6 @@ class QBot(Controller):
         # cord_data[coords] = values
 
         for coord, value in knowledge.visible_tiles.items():
-
             map[self._TILES[value.type], coord[0], coord[1]] = 1
             if value.loot:
                 map[self._WEAPONS[value.loot.name], coord[0], coord[1]] = 1
@@ -297,11 +333,11 @@ class QBot(Controller):
 
     def decide(self, knowledge: ChampionKnowledge) -> Action:
         map, my_data = self.serialize_knowledge(knowledge)
-        self.transition_cache['_state'] = map
-        self.transition_cache['_self_state'] = my_data
+        self.transition_cache["_state"] = map
+        self.transition_cache["_self_state"] = my_data
 
         reward = self.do_reward()
-        self.transition_cache['reward'] = reward
+        self.transition_cache["reward"] = reward
 
         self.memory.store_transition(**self.transition_cache)
 
@@ -309,22 +345,21 @@ class QBot(Controller):
 
         action_idx = self.choose_action(map, my_data)
 
-        self.transition_cache['state'] = map
-        self.transition_cache['self_state'] = my_data
-        self.transition_cache['action'] = action_idx
+        self.transition_cache["state"] = map
+        self.transition_cache["self_state"] = my_data
+        self.transition_cache["action"] = action_idx
         self._steps_survived += 1
 
         return self.POSSIBLE_ACTIONS[action_idx]
 
     def praise(self, score: int) -> None:
-        self.transition_cache['reward'] = (3 - score) * 100
-        self.transition_cache['done'] = True
+        self.transition_cache["reward"] = (3 - score) * 100
+        self.transition_cache["done"] = True
         self.memory.store_transition(**self.transition_cache)
-
 
     @property
     def name(self) -> str:
-        return 'Bob'
+        return "Bob"
 
     @property
     def preferred_tabard(self) -> Tabard:
