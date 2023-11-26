@@ -1,12 +1,11 @@
 from .. import Controller
 from .replay_buffer import ReplayBuffer
-from .model import Model
+from .model import Model, CNNPooler
 from typing import Any
 from gupb.model.characters import ChampionKnowledge, Tabard, ChampionDescription, Facing, Action
 from gupb.model.arenas import ArenaDescription
 from gupb.model.tiles import TileDescription
 import numpy as np
-from datetime import datetime
 import torch as T
 import wandb
 from collections import defaultdict
@@ -82,10 +81,11 @@ class QBot(Controller):
 
     BIN2DEC = 2**np.arange(_WEAPONS.__len__())
 
-    SAVE_EVERY_N = 15_000
+    SAVE_EVERY_N = 5_000
 
     def __init__(self):
-
+        self._model_cls = CNNPooler
+        self._steps_survived = 0
         self.champ_data: ChampionDescription = None
         self.map_size = (0, 0)
         self.my_data_size = self._N_CHANNELS
@@ -128,6 +128,7 @@ class QBot(Controller):
         scores = [sum(x) for x in zip(*self._log_scores.values())]
         log_data['avg_reward'] = np.mean(scores)
         log_data['std_reward'] = np.std(scores)
+        log_data['steps_survived'] = self._steps_survived
         log_data |= {
             k: wandb.Histogram(v)
             for k, v in self._log_scores.items()
@@ -140,7 +141,8 @@ class QBot(Controller):
         if not self.memory:
             self.memory = ReplayBuffer(10_000, self.map_size, self.my_data_size, self.action_size)
         if not self.q:
-            self.q = Model(0.001, self.map_size, self.my_data_size, self.action_size, 'q_learning').to('cuda:0')
+            print("Loading model")
+            self.q = self._model_cls(0.001, self.map_size, self.my_data_size, self.action_size, 'q_learning').to('cuda:0')
             #tu można na double
             self.q.float()
             #todo: to do inita przenieść
@@ -149,6 +151,7 @@ class QBot(Controller):
         if len(self._log_scores) > 0:
             self.__log_to_wandb()
 
+        self._steps_survived = 0
         self._log_scores = defaultdict(lambda: [])
 
         self.transition_cache: dict[str, Any] = {
@@ -309,6 +312,7 @@ class QBot(Controller):
         self.transition_cache['state'] = map
         self.transition_cache['self_state'] = my_data
         self.transition_cache['action'] = action_idx
+        self._steps_survived += 1
 
         return self.POSSIBLE_ACTIONS[action_idx]
 
