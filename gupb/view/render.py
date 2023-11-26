@@ -198,7 +198,7 @@ class Renderer:
         return self.ms_per_time_unit * game.current_state.value
 
     def _render_starting_screen(self):
-        wait_for_start_key = True
+        wait_for_start_key = False
         while wait_for_start_key:
             GAME_FONT.render_to(self.screen, (70, 180), "Press X to start..!", (250, 250, 250))
             pygame.display.flip()
