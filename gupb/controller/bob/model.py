@@ -38,6 +38,7 @@ class AbstractModel(nn.Module):
         T.save(self.state_dict(), os.path.join(save_dir, filename))
 
     def load_model(self, load_dir=None):
+
         if load_dir is None:
             load_dir = self.save_dir
         self.load_state_dict(T.load(load_dir))
@@ -45,7 +46,7 @@ class AbstractModel(nn.Module):
 
 class Model(AbstractModel):
     def __init__(
-        self, alpha, state_shape, self_state_shape, n_actions, name, fname="tmp/model"
+            self, alpha, state_shape, self_state_shape, n_actions, name, fname="tmp/model"
     ):
         super(Model, self).__init__(name, fname, None)
 
@@ -108,7 +109,7 @@ class CNNPooler(AbstractModel):
         )
 
     def __init__(
-        self, alpha, state_shape, self_state_shape, n_actions, name, fname="tmp/model2"
+            self, alpha, state_shape, self_state_shape, n_actions, name, fname="tmp/model2"
     ):
         super().__init__(name, fname, None)
 

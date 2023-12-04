@@ -1,3 +1,5 @@
+import os
+
 from .. import Controller
 from .replay_buffer import ReplayBuffer
 from .model import Model, CNNPooler
@@ -16,7 +18,6 @@ import torch as T
 import wandb
 from collections import defaultdict
 from datetime import datetime
-
 
 POSSIBLE_RANDOM_ACTIONS = [
     Action.TURN_LEFT,
@@ -79,6 +80,9 @@ class QBot(Controller):
         Action.TURN_RIGHT,
         Action.STEP_FORWARD,
         Action.ATTACK,
+        Action.STEP_BACKWARD,
+        Action.STEP_LEFT,
+        Action.STEP_RIGHT,
     ]
 
     BIN2DEC = 2 ** np.arange(_WEAPONS.__len__())
@@ -137,18 +141,14 @@ class QBot(Controller):
     def reset(self, game_no, arena_description: ArenaDescription) -> None:
         self.map_size = self.MAPS[arena_description.name]
         if not self.memory:
-            self.memory = ReplayBuffer(
-                10_000, self.map_size, self.my_data_size, self.action_size
-            )
+            self.memory = ReplayBuffer(10_000, self.map_size, self.my_data_size, self.action_size)
         if not self.q:
-            print("Loading model")
-            self.q = self._model_cls(
-                0.001, self.map_size, self.my_data_size, self.action_size, "q_learning"
-            ).to("cuda:0")
-            # tu można na double
+            self.q = Model(0.001, self.map_size, self.my_data_size, self.action_size, 'q_learning')
+            if path := get_most_recent_file() is not None:
+
+                self.q.load_model(get_most_recent_file())
+
             self.q.float()
-            # todo: to do inita przenieść
-            # self.q.load_model('M:\\Studia\\UCZENIE\\BOB\\15-01')
 
         if len(self._log_scores) > 0:
             self.__log_to_wandb()
@@ -195,7 +195,7 @@ class QBot(Controller):
             batch_index = np.arange(batch_size, dtype=np.int32)
 
             q_target[batch_index, actions] = (
-                rewards + self.gamma * q_next[batch_index, max_actions] * done
+                    rewards + self.gamma * q_next[batch_index, max_actions] * done
             )
             q_target = T.tensor(q_target).to(self.q.device)
 
@@ -260,10 +260,10 @@ class QBot(Controller):
 
     def do_reward(self) -> float:
         weapon_change_idx = self.transition_cache["_self_state"][
-            self._WEAPONS["knife"] : self._WEAPONS["amulet"] + 1
-        ].dot(self.BIN2DEC) - self.transition_cache["self_state"][
-            self._WEAPONS["knife"] : self._WEAPONS["amulet"] + 1
-        ].dot(
+                            self._WEAPONS["knife"]: self._WEAPONS["amulet"] + 1
+                            ].dot(self.BIN2DEC) - self.transition_cache["self_state"][
+                                                  self._WEAPONS["knife"]: self._WEAPONS["amulet"] + 1
+                                                  ].dot(
             self.BIN2DEC
         )
         # todo: reward za hita, negatywna nagroda za mgłę
@@ -276,25 +276,25 @@ class QBot(Controller):
             self.transition_cache["self_state"][1:5]
         )
         health_diff = (
-            self.transition_cache["_self_state"][self._HEALTH]
-            - self.transition_cache["self_state"][self._HEALTH]
+                self.transition_cache["_self_state"][self._HEALTH]
+                - self.transition_cache["self_state"][self._HEALTH]
         )
         potion = self.transition_cache["_self_state"][self._CONSUMABLE]
         mist = self.__calculate_mist_reward()
 
         for k, v in zip(
-            ["visible_tiles", "hp_diff", "potions", "mist"],
-            [vis_ties, health_diff, potion, mist],
+                ["visible_tiles", "hp_diff", "potions", "mist"],
+                [vis_ties, health_diff, potion, mist],
         ):
             self._log_scores[k].append(v)
 
         DDD = 0
         return (
-            weapon_change_idx
-            + vis_ties
-            + health_diff
-            + potion * self._HEALTH_MULTI
-            + mist
+                weapon_change_idx
+                + vis_ties
+                + health_diff
+                + potion * self._HEALTH_MULTI
+                + mist
         )
 
     def serialize_knowledge(self, knowledge: ChampionKnowledge):
@@ -364,3 +364,30 @@ class QBot(Controller):
     @property
     def preferred_tabard(self) -> Tabard:
         return Tabard.GREEN
+
+
+def get_most_recent_file(directory='\\tmp\\model\\q_learning'):
+    par = os.getcwd()
+    directory = par + directory
+    try:
+
+        if not os.path.exists(directory):
+            # Create the directory and its parent directories if they don't exist
+            os.makedirs(directory)
+            return None
+        else:
+            # Get a list of all files in the directory
+            files = [os.path.join(directory, file) for file in os.listdir(directory) if
+                     os.path.isfile(os.path.join(directory, file))]
+
+            if not files:
+                print("No files found in the directory.")
+                return None
+
+            # Sort files based on modification time (most recent first)
+            most_recent_file = max(files, key=os.path.getmtime)
+
+        return most_recent_file
+    except OSError as e:
+        print(f"Error: {e}")
+        return None
